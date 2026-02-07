@@ -1,5 +1,7 @@
 
-# GNN Coding Competition Template
+# TopoGraph Benchmark (TGB)
+
+NeurIPS Dataset & Benchmark Competition on Graph Learning with Topological Features
 
 This repository provides a **secure, reproducible template** for running a
 Graph Neural Network (GNN) competition that supports **humans and LLMs**
