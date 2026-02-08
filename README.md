@@ -1,24 +1,15 @@
-Perfect 👍 — here is the **FULL README.md** ready to copy-paste directly into your repo.
-
-Just open `README.md`, delete everything, paste this, save, commit.
-
----
+Got it 👍 — here is the **raw README.md** ready to copy-paste directly.
 
 ```md
 # TopoGraph Benchmark (TGB)
 
 NeurIPS Dataset & Benchmark Competition on Graph Learning with Topological Features
 
-This repository provides a **secure, reproducible template** for running a
-Graph Neural Network (GNN) competition that supports **humans and LLMs**
-competing on equal footing.
+This repository provides a secure and reproducible template for running a graph learning competition where humans and LLMs compete on equal footing.
 
-The design intentionally **does not execute participant code**. Instead,
-participants submit **predictions only**, which are automatically evaluated
-and ranked on a public leaderboard using GitHub Actions.
+The benchmark is designed to never execute participant code. Participants submit predictions only, which are automatically evaluated and ranked using GitHub Actions.
 
 This makes the competition:
-
 - Safe (no untrusted code execution)
 - Fully reproducible
 - Suitable for human-vs-LLM evaluation studies
@@ -27,34 +18,11 @@ This makes the competition:
 
 ## 1. Task Overview
 
-**Task:** Graph classification using **precomputed topological moment features**.
+Task: Graph classification using precomputed topological moment features.
 
-Participants receive precomputed topological moment features extracted from graphs.
-The goal is to build models that predict the **graph class label** for unseen test graphs.
+Participants receive precomputed topological moment features extracted from graphs and must predict the graph class label for unseen test graphs.
 
-This benchmark evaluates how well models can combine **Graph Neural Networks**
-and **Topological Representations**.
-
-### Public Inputs
-
-Located in `data/public/`:
-
-- `moments_all.npy` → Feature matrix (N graphs × d features)
-- `train_ids.npy` → Indices of training graphs
-- `val_ids.npy` → Indices of validation graphs
-- `test_ids.npy` → Indices of test graphs
-- `labels_train.npy` → Labels for training graphs
-- `labels_val.npy` *(optional)* → Labels for validation graphs
-
-### Output (Submission)
-
-Predict the class label for each graph in `test_ids.npy`.
-
-### Evaluation Metric
-
-**Primary metric:** Macro-F1 score
-
-Participants may train **any model offline**:
+Participants may train any model offline:
 - GNNs
 - Classical ML
 - Deep learning
@@ -63,11 +31,26 @@ Participants may train **any model offline**:
 
 Only predictions are submitted.
 
+### Public Inputs (data/public/)
+
+moments_all.npy  → Feature matrix (N graphs × d features)  
+train_ids.npy    → Training graph indices  
+val_ids.npy      → Validation graph indices  
+test_ids.npy     → Test graph indices  
+labels_train.npy → Training labels  
+labels_val.npy   → Validation labels (optional)
+
+### Required Output
+
+Predict labels for all graphs in test_ids.npy.
+
+### Evaluation Metric
+
+Primary metric: Macro-F1 score.
+
 ---
 
 ## Baseline Results
-
-All baselines are deterministic and provided in `starter_code/`.
 
 | Model | Validation Accuracy | Validation Macro-F1 |
 |---|---:|---:|
@@ -76,18 +59,14 @@ All baselines are deterministic and provided in `starter_code/`.
 | GNN-only (GCN) | 0.3000 | 0.2677 |
 | Hybrid Concat (GCN + Moments) | 0.2583 | 0.2488 |
 
-### Key Observation
+Key observation: precomputed topological moments already contain strong signal.  
+Naive fusion with GNN embeddings does not improve performance.
 
-Precomputed **topological moments already contain strong signal**.  
-Naive fusion with GNN embeddings **does not improve performance**.
-
-👉 The challenge is to design **better fusion strategies** between topology and GNN representations.
+The challenge is to design better fusion strategies between topology and GNN representations.
 
 ---
 
 ## 2. Repository Structure
-
-```
 
 .
 ├── data/
@@ -100,7 +79,7 @@ Naive fusion with GNN embeddings **does not improve performance**.
 │   │   ├── labels_val.npy
 │   │   └── sample_submission.csv
 │   └── private/
-│       └── labels_all.npy   # NEVER COMMITTED (used only for scoring)
+│       └── labels_all.npy   # used only for scoring
 │
 ├── starter_code/
 │   ├── baseline_moments_svm.py
@@ -125,103 +104,79 @@ Naive fusion with GNN embeddings **does not improve performance**.
 │   └── leaderboard.md
 │
 └── .github/workflows/
-├── score_submission.yml
-└── publish_leaderboard.yml
-
-```
+    ├── score_submission.yml
+    └── publish_leaderboard.yml
 
 ---
 
 ## 3. Submission Format
 
-Participants submit **one CSV file**:
-
-```
+Participants submit one file:
 
 predictions.csv
 
-```
+Format:
 
-### Format
-
-```
-
-id,y_pred
-0,2
-1,0
-2,5
+id,y_pred  
+0,2  
+1,0  
+2,5  
 ...
 
-```
-
-### Rules
-
-- `id` must match the IDs in `data/public/test_ids.npy`
+Rules:
+- id must match IDs in data/public/test_ids.npy
 - One row per test graph
-- `y_pred` must be an **integer class label**
+- y_pred must be an integer class label
 - No missing or duplicate IDs
 
-A template is provided in:
-
-```
-
+Template available in:
 data/public/sample_submission.csv
-
-```
 
 ---
 
 ## 4. How to Submit
 
-1. Fork this repository
-2. Create a new folder:
-
-```
+1. Fork the repository  
+2. Create folder:
 
 submissions/inbox/<team_name>/<run_id>/
 
-````
-
 3. Add:
+- predictions.csv
+- metadata.json
 
-- `predictions.csv`
-- `metadata.json`
+Example metadata.json:
 
-### Example metadata.json
-
-```json
 {
   "team": "example_team",
   "model": "human+llm",
   "llm_name": "gpt-5",
   "notes": "Hybrid topology + GNN fusion model"
 }
-````
 
-4. Open a Pull Request to `main`
+4. Open a Pull Request to main.
 
-The PR will be **automatically scored** and the result posted as a comment.
+The PR will be automatically scored and the result posted as a comment.
 
 ---
 
 ## 5. Leaderboard
 
-After a PR is merged, the submission is added to:
+After merging, submissions are added to:
+- leaderboard/leaderboard.csv
+- leaderboard/leaderboard.md
 
-* `leaderboard/leaderboard.csv`
-* `leaderboard/leaderboard.md`
-
-Rankings are sorted by **descending Macro-F1**.
+Rankings are sorted by descending Macro-F1.
 
 ---
 
-## 6. Rules
+## 6. Competition Rules
 
-* No external or private data
-* No manual labeling of test data
-* No modification of evaluation scripts
-* Unlimited offline training allowed
-* Only predictions are submitted
+- No external or private data
+- No manual labeling of test data
+- Do not modify evaluation scripts
+- Unlimited offline training allowed
+- Only predictions are submitted
 
 Violations may result in disqualification.
 
@@ -229,22 +184,20 @@ Violations may result in disqualification.
 
 ## 7. Human vs LLM Research Usage
 
-To use this competition for research:
-
-* Fix a time budget (e.g., 2 hours)
-* Fix a submission budget (e.g., 5 runs)
-* Record metadata (`model`, `llm_name`)
-* Compare:
-
-  * Validity rate
-  * Best score within K submissions
-  * Score vs submission index
+Recommended protocol:
+- Fix a time budget (e.g., 2 hours)
+- Fix a submission budget (e.g., 5 runs)
+- Record metadata (model, llm_name)
+- Compare:
+  - Validity rate
+  - Best score within K submissions
+  - Score vs submission index
 
 ---
 
 ## 8. Citation
 
-If you use this benchmark in academic work, please cite the repository.
+If you use this benchmark in academic work, please cite this repository.
 
 ---
 
@@ -258,17 +211,8 @@ MIT License.
 
 Enable GitHub Pages:
 
-Settings → Pages → Source = `main` branch `/docs` folder
+Settings → Pages → Source = main branch /docs folder
 
-Leaderboard will appear at:
-
-```
+Leaderboard URL:
 https://<your-org>.github.io/<repo>/leaderboard.html
-```
-
-```
-
----
-
-Next step: we generate **sample_submission.csv** automatically from `test_ids.npy`.
 ```
