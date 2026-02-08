@@ -18,16 +18,25 @@ This makes the competition:
 
 ## 1. Task Overview
 
-Task: Graph classification using precomputed topological moment features.
+Participants must use the provided **topological moment features**.
 
-Participants receive precomputed topological moment features extracted from graphs and must predict the graph class label for unseen test graphs.
+The core scientific goal of this benchmark is to study:
 
-Participants may train any model offline:
-- GNNs
-- Classical ML
-- Deep learning
-- Hybrid topology + GNN models
-- Ensembles
+> How can topological representations be combined with Graph Neural Networks?
+
+Participants are encouraged to design models that **fuse topology and GNNs** in a principled way.
+
+Possible approaches include (but are not limited to):
+
+- Fusion of moment features with GNN embeddings  
+- Attention mechanisms over topological descriptors  
+- Multi-branch architectures (Topology branch + GNN branch)  
+- Feature gating or conditioning of message passing by moments  
+- Meta-learning or adaptive weighting between topology and GNN signals  
+- Ensemble or late-fusion strategies  
+
+Pure GNN-only or pure moment-only models are allowed as baselines,  
+but **the competition is designed so that better fusion is required to win.**
 
 Only predictions are submitted.
 
