@@ -1,0 +1,22 @@
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.ipynb_checkpoints/
+
+# -------------------------
+# OS files
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# Private competition data
+# -------------------------
+data/private/
+labels_all.npy
+data/public/labels_all.npy
+

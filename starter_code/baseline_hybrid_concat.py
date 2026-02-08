@@ -1,0 +1,219 @@
+# ============================================================
+# starter_code/baseline_hybrid_concat.py  (COMPETITION FORMAT)
+# - Uses OFFICIAL split files: train_ids.npy / val_ids.npy / test_ids.npy
+# - Uses moments_all.npy as extra graph-level features
+# - Trains a simple GCN + concat(moments) -> MLP classifier
+# - Validates if labels_val.npy exists
+# - Writes submissions/predictions.csv for OFFICIAL test_ids
+# - Deterministic (seed + deterministic shuffle)
+# ============================================================
+
+import random
+import numpy as np
+from pathlib import Path
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from torch_geometric.datasets import TUDataset
+from torch_geometric.loader import DataLoader
+from torch_geometric.nn import GCNConv, global_mean_pool
+
+from sklearn.metrics import accuracy_score, f1_score
+
+try:
+    from starter_code.utils_submit import save_predictions_csv
+except ModuleNotFoundError:
+    from utils_submit import save_predictions_csv
+
+
+def infer_in_dim(dataset):
+    for d in dataset:
+        if d.x is not None:
+            return d.x.shape[1]
+    return 1
+
+
+# ----------------------------
+# Model
+# ----------------------------
+class HybridConcat(nn.Module):
+    def __init__(self, in_dim, moment_dim, hidden=64, out_dim=64, num_classes=6):
+        super().__init__()
+        self.conv1 = GCNConv(in_dim, hidden)
+        self.conv2 = GCNConv(hidden, out_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(out_dim + moment_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, num_classes),
+        )
+
+    def forward(self, data, moment_tensor):
+        x = data.x
+        if x is None:
+            x = torch.ones((data.num_nodes, 1), device=data.edge_index.device)
+
+        x = F.relu(self.conv1(x, data.edge_index))
+        x = F.relu(self.conv2(x, data.edge_index))
+        g = global_mean_pool(x, data.batch)  # (batch, out_dim)
+
+        # graph_id must be a tensor of shape (batch,)
+        graph_ids = data.graph_id.to(g.device).view(-1)
+        m = moment_tensor[graph_ids]  # (batch, moment_dim)
+
+        return self.mlp(torch.cat([g, m], dim=1))
+
+
+def train_epoch(model, loader, optimizer, criterion, moment_tensor, device):
+    model.train()
+    for batch in loader:
+        batch = batch.to(device)
+        optimizer.zero_grad()
+        out = model(batch, moment_tensor)
+        loss = criterion(out, batch.y)
+        loss.backward()
+        optimizer.step()
+
+
+@torch.no_grad()
+def predict(model, loader, moment_tensor, device):
+    model.eval()
+    y_true, y_pred = [], []
+    for batch in loader:
+        batch = batch.to(device)
+        out = model(batch, moment_tensor)
+        pred = out.argmax(dim=1).cpu().numpy()
+        y_pred.extend(pred.tolist())
+
+        if hasattr(batch, "y") and batch.y is not None:
+            y_true.extend(batch.y.cpu().numpy().tolist())
+
+    return np.array(y_true, dtype=int), np.array(y_pred, dtype=int)
+
+
+def main():
+    # ----------------------------
+    # Determinism
+    # ----------------------------
+    seed = 0
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    # ----------------------------
+    # Paths + split files
+    # ----------------------------
+    ROOT = Path(__file__).resolve().parents[1]
+    pub = ROOT / "data" / "public"
+    out_path = ROOT / "submissions" / "predictions.csv"
+
+    # Moments (public features)
+    X_mom = np.load(pub / "moments_all.npy").astype(np.float32)
+    moment_dim = X_mom.shape[1]
+
+    # Official split ids (public)
+    idx_train = np.load(pub / "train_ids.npy").astype(int)
+    idx_val   = np.load(pub / "val_ids.npy").astype(int)
+    idx_test  = np.load(pub / "test_ids.npy").astype(int)
+
+    # Labels: train is required, val optional
+    y_train = np.load(pub / "labels_train.npy").astype(int)
+    labels_val_path = pub / "labels_val.npy"
+    y_val = np.load(labels_val_path).astype(int) if labels_val_path.exists() else None
+
+    # ----------------------------
+    # Load dataset (PyG ENZYMES)
+    # ----------------------------
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Using device:", device)
+
+    dataset = TUDataset(root=str(ROOT / "data"), name="ENZYMES")
+
+    # Attach graph_id AND correct labels to the graphs used
+    train_list, val_list, test_list = [], [], []
+
+    for pos, i in enumerate(idx_train):
+        d = dataset[int(i)]
+        d.graph_id = torch.tensor(int(i), dtype=torch.long)  # scalar
+        d.y = torch.tensor(int(y_train[pos]), dtype=torch.long)
+        train_list.append(d)
+
+    for pos, i in enumerate(idx_val):
+        d = dataset[int(i)]
+        d.graph_id = torch.tensor(int(i), dtype=torch.long)
+        if y_val is not None:
+            d.y = torch.tensor(int(y_val[pos]), dtype=torch.long)
+        val_list.append(d)
+
+    for i in idx_test:
+        d = dataset[int(i)]
+        d.graph_id = torch.tensor(int(i), dtype=torch.long)
+        # no y for test
+        test_list.append(d)
+
+    # Deterministic DataLoader shuffle
+    g = torch.Generator()
+    g.manual_seed(seed)
+
+    train_loader = DataLoader(train_list, batch_size=32, shuffle=True, generator=g)
+    val_loader   = DataLoader(val_list,   batch_size=32, shuffle=False)
+    test_loader  = DataLoader(test_list,  batch_size=32, shuffle=False)
+
+    # Moments tensor on device
+    moment_tensor = torch.tensor(X_mom, dtype=torch.float32, device=device)
+
+    # ----------------------------
+    # Model
+    # ----------------------------
+    in_dim = infer_in_dim(dataset)
+
+    # Infer num classes from y_train (safe)
+    num_classes = int(np.max(y_train)) + 1
+
+    model = HybridConcat(
+        in_dim=in_dim,
+        moment_dim=moment_dim,
+        hidden=64,
+        out_dim=64,
+        num_classes=num_classes
+    ).to(device)
+
+    opt = torch.optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-4)
+    crit = nn.CrossEntropyLoss()
+
+    # ----------------------------
+    # Train
+    # ----------------------------
+    for _ in range(30):
+        train_epoch(model, train_loader, opt, crit, moment_tensor, device)
+
+    # ----------------------------
+    # Validate (if labels_val exists)
+    # ----------------------------
+    print("\n=== Baseline: Hybrid Concat (Competition Format) ===")
+    if y_val is not None:
+        y_true, y_pred = predict(model, val_loader, moment_tensor, device)
+        acc = accuracy_score(y_true, y_pred)
+        mf1 = f1_score(y_true, y_pred, average="macro")
+        print(f"{'Split':10s}  {'Acc':>8s}  {'Macro-F1':>10s}")
+        print(f"{'Val':10s}  {acc:8.4f}  {mf1:10.4f}")
+    else:
+        print("[Info] labels_val.npy not found -> skipping validation metrics.")
+
+    # ----------------------------
+    # Predict test + save
+    # ----------------------------
+    _, y_pred_test = predict(model, test_loader, moment_tensor, device)
+    save_predictions_csv(ids=idx_test, y_pred=y_pred_test, out_path=str(out_path))
+
+
+if __name__ == "__main__":
+    main()
+
