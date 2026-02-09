@@ -5,13 +5,19 @@ on:
     paths:
       - "submissions/inbox/**/predictions.csv"
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   score:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout full history
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -44,11 +50,18 @@ jobs:
       - name: Find submission file in PR
         id: find
         run: |
-          FILE=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep -E 'submissions/inbox/.*/predictions.csv' | head -n 1)
+          echo "Fetching base branch..."
+          git fetch origin ${{ github.base_ref }} --depth=1
+
+          echo "Looking for predictions.csv in PR diff..."
+          FILE=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} \
+            | grep -E 'submissions/inbox/.*/predictions.csv' | head -n 1)
+
           if [ -z "$FILE" ]; then
             echo "No predictions.csv found in PR diff."
             exit 1
           fi
+
           echo "file=$FILE" >> $GITHUB_OUTPUT
           echo "[INFO] submission file: $FILE"
 
@@ -75,3 +88,4 @@ jobs:
               issue_number: context.issue.number,
               body
             });
+
