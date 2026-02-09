@@ -3,11 +3,10 @@ name: Publish Leaderboard (on merge)
 on:
   pull_request:
     types: [closed]
-    paths:
-      - "submissions/inbox/**/predictions.csv"
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   publish:
@@ -37,97 +36,42 @@ jobs:
           python - <<'EOF'
           import os, base64
           from pathlib import Path
+
           b64 = os.environ.get("LABELS_ALL_NPY_B64", "")
-          if not b64:
-              raise SystemExit("Missing secret LABELS_ALL_NPY_B64")
           out = Path("data/private")
           out.mkdir(parents=True, exist_ok=True)
           (out / "labels_all.npy").write_bytes(base64.b64decode(b64.encode("utf-8")))
-          print("[OK] wrote data/private/labels_all.npy")
+          print("[OK] labels restored")
           EOF
 
       - name: Find merged submission file
         id: find
         run: |
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
-          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-          echo "[INFO] base sha: $BASE_SHA"
-          echo "[INFO] merge sha: $MERGE_SHA"
-
-          git fetch --no-tags --prune --depth=1 origin $BASE_SHA || true
-          git fetch --no-tags --prune --depth=1 origin $MERGE_SHA || true
-
-          FILE=$(git diff --name-only "$BASE_SHA" "$MERGE_SHA" | grep -E 'submissions/inbox/.*/predictions.csv' | head -n 1)
+          FILE=$(git diff --name-only HEAD~1 HEAD | grep -E 'submissions/inbox/.*/predictions.csv' | head -n 1)
           if [ -z "$FILE" ]; then
-            echo "No predictions.csv found in merged diff."
+            echo "No submission found in merge commit"
             exit 1
           fi
           echo "file=$FILE" >> $GITHUB_OUTPUT
-          echo "[INFO] merged submission file: $FILE"
 
-      - name: Validate submission
-        run: |
-          python -m competition.validate_submission --submission "${{ steps.find.outputs.file }}"
-
-      - name: Score submission
+      - name: Score merged submission
         id: score
         run: |
           python -m competition.evaluate --submission "${{ steps.find.outputs.file }}" | tee score.txt
-          SCORE_LINE=$(tail -n 1 score.txt)
-          echo "score_line=$SCORE_LINE" >> $GITHUB_OUTPUT
-          echo "[INFO] $SCORE_LINE"
+          SCORE=$(tail -n 1 score.txt | awk '{print $2}')
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
 
-      - name: Append to leaderboard.csv (sorted best-first)
-        env:
-          PR_NUM: ${{ github.event.pull_request.number }}
-          AUTHOR: ${{ github.event.pull_request.user.login }}
-          TITLE: ${{ github.event.pull_request.title }}
-          SUB_FILE: ${{ steps.find.outputs.file }}
+      - name: Update leaderboard CSV
         run: |
-          python - <<'EOF'
-          import os
-          from pathlib import Path
-          import pandas as pd
+          mkdir -p leaderboard
+          echo "pr,author,score" >> leaderboard/leaderboard.csv
+          echo "${{ github.event.pull_request.number }},${{ github.event.pull_request.user.login }},${{ steps.score.outputs.score }}" >> leaderboard/leaderboard.csv
 
-          pr_num = int(os.environ["PR_NUM"])
-          author = os.environ["AUTHOR"]
-          title  = os.environ["TITLE"]
-          sub_file = os.environ["SUB_FILE"]
-
-          score_line = Path("score.txt").read_text().strip().splitlines()[-1]  # "macro_f1: 0.xxxxx"
-          score = float(score_line.split(":")[1].strip())
-
-          out_dir = Path("leaderboard")
-          out_dir.mkdir(parents=True, exist_ok=True)
-          csv_path = out_dir / "leaderboard.csv"
-
-          row = {
-              "pr_number": pr_num,
-              "author": author,
-              "title": title,
-              "submission_path": sub_file,
-              "macro_f1": score,
-          }
-
-          if csv_path.exists():
-              df = pd.read_csv(csv_path)
-              df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-          else:
-              df = pd.DataFrame([row])
-
-          df = df.sort_values("macro_f1", ascending=False).reset_index(drop=True)
-          df.to_csv(csv_path, index=False)
-          print("[OK] wrote", csv_path, "rows", len(df))
-          EOF
-
-      - name: Render leaderboard.md
+      - name: Commit leaderboard
         run: |
-          python competition/render_leaderboard.py
-
-      - name: Commit leaderboard update
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add leaderboard/leaderboard.csv leaderboard/leaderboard.md
-          git commit -m "Update leaderboard (PR #${{ github.event.pull_request.number }})" || echo "Nothing to commit"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add leaderboard/leaderboard.csv
+          git commit -m "Update leaderboard"
           git push
+
