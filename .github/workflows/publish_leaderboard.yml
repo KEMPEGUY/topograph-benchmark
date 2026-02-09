@@ -1,0 +1,117 @@
+name: Publish Leaderboard (on merge)
+
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - "submissions/inbox/**/predictions.csv"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Reconstruct hidden labels
+        env:
+          LABELS_ALL_NPY_B64: ${{ secrets.LABELS_ALL_NPY_B64 }}
+        run: |
+          python - <<'EOF'
+          import os, base64
+          from pathlib import Path
+          b64 = os.environ.get("LABELS_ALL_NPY_B64", "")
+          if not b64:
+              raise SystemExit("Missing secret LABELS_ALL_NPY_B64")
+          out = Path("data/private")
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "labels_all.npy").write_bytes(base64.b64decode(b64.encode("utf-8")))
+          print("[OK] wrote data/private/labels_all.npy")
+          EOF
+
+      - name: Find merged submission file
+        id: find
+        env:
+          PR_NUM: ${{ github.event.pull_request.number }}
+        run: |
+          echo "[INFO] PR #$PR_NUM merged. Looking for predictions.csv..."
+          FILE=$(git diff --name-only HEAD~1..HEAD | grep -E 'submissions/inbox/.*/predictions.csv' | head -n 1)
+          if [ -z "$FILE" ]; then
+            echo "No predictions.csv found in merge diff."
+            exit 1
+          fi
+          echo "file=$FILE" >> $GITHUB_OUTPUT
+          echo "[INFO] submission file: $FILE"
+
+      - name: Score submission
+        id: score
+        run: |
+          python -m competition.evaluate --submission "${{ steps.find.outputs.file }}" | tee score.txt
+          SCORE_LINE=$(tail -n 1 score.txt)
+          echo "score_line=$SCORE_LINE" >> $GITHUB_OUTPUT
+
+      - name: Append to leaderboard.csv
+        env:
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          python - <<'EOF'
+          import os, re, csv
+          from pathlib import Path
+          lb = Path("leaderboard/leaderboard.csv")
+          lb.parent.mkdir(parents=True, exist_ok=True)
+
+          score_line = os.environ["SCORE_LINE"]
+          m = re.search(r"macro_f1:\s*([0-9.]+)", score_line)
+          if not m:
+            raise SystemExit(f"Could not parse score from: {score_line}")
+          score = float(m.group(1))
+
+          pr_num = os.environ["PR_NUM"]
+          pr_title = os.environ["PR_TITLE"]
+          pr_author = os.environ["PR_AUTHOR"]
+          submission_path = os.environ["SUB_FILE"]
+
+          exists = lb.exists()
+          with lb.open("a", newline="") as f:
+            w = csv.writer(f)
+            if not exists:
+              w.writerow(["pr_number","author","title","submission_path","macro_f1"])
+            w.writerow([pr_num, pr_author, pr_title, submission_path, f"{score:.6f}"])
+
+          print("[OK] appended to", lb)
+          EOF
+        env:
+          SCORE_LINE: ${{ steps.score.outputs.score_line }}
+          SUB_FILE: ${{ steps.find.outputs.file }}
+
+      - name: Render leaderboard.md
+        run: |
+          python -m competition.render_leaderboard
+
+      - name: Commit leaderboard update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add leaderboard/leaderboard.csv leaderboard/leaderboard.md
+          git commit -m "Update leaderboard" || echo "Nothing to commit"
+          git push
+
