@@ -5,13 +5,19 @@ on:
     paths:
       - "submissions/inbox/**/predictions.csv"
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   score:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout (full history for diff)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -41,14 +47,23 @@ jobs:
           print("[OK] wrote data/private/labels_all.npy")
           EOF
 
-      - name: Find submission file in PR
+      - name: Find submission file in PR diff (base SHA -> head SHA)
         id: find
         run: |
-          FILE=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep -E 'submissions/inbox/.*/predictions.csv' | head -n 1)
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+
+          echo "Base: $BASE"
+          echo "Head: $HEAD"
+
+          git diff --name-only "$BASE" "$HEAD" | tee changed_files.txt
+
+          FILE=$(cat changed_files.txt | grep -E '^submissions/inbox/.+/predictions\.csv$' | head -n 1)
           if [ -z "$FILE" ]; then
             echo "No predictions.csv found in PR diff."
             exit 1
           fi
+
           echo "file=$FILE" >> $GITHUB_OUTPUT
           echo "[INFO] submission file: $FILE"
 
@@ -60,7 +75,11 @@ jobs:
         id: score
         run: |
           python -m competition.evaluate --submission "${{ steps.find.outputs.file }}" | tee score.txt
-          SCORE_LINE=$(tail -n 1 score.txt)
+          SCORE_LINE=$(grep -E '^macro_f1:' score.txt | tail -n 1)
+          if [ -z "$SCORE_LINE" ]; then
+            echo "Could not find macro_f1 line in output"
+            exit 1
+          fi
           echo "score_line=$SCORE_LINE" >> $GITHUB_OUTPUT
 
       - name: Comment score on PR
@@ -75,3 +94,4 @@ jobs:
               issue_number: context.issue.number,
               body
             });
+
