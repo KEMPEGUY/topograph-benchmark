@@ -23,3 +23,4 @@ data/public/labels_all.npy
 data/private/
 data/private/*.npy
 labels_all_b64.txt
+.~lock.*#
