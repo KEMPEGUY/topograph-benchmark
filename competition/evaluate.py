@@ -57,6 +57,8 @@ def main():
     score = macro_f1(y_true, y_pred)
     print(f"macro_f1: {score:.6f}")
 
+   
+
 
 if __name__ == "__main__":
     main()
