@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout full history
+      - name: Checkout repository (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -38,40 +38,93 @@ jobs:
           from pathlib import Path
 
           b64 = os.environ.get("LABELS_ALL_NPY_B64", "")
+          if not b64:
+              raise SystemExit("Missing secret LABELS_ALL_NPY_B64")
+
           out = Path("data/private")
           out.mkdir(parents=True, exist_ok=True)
           (out / "labels_all.npy").write_bytes(base64.b64decode(b64.encode("utf-8")))
-          print("[OK] labels restored")
+          print("[OK] wrote data/private/labels_all.npy")
           EOF
 
-      - name: Find merged submission file
+      - name: Find merged submission file (base->merge diff)
         id: find
         run: |
-          FILE=$(git diff --name-only HEAD~1 HEAD | grep -E 'submissions/inbox/.*/predictions.csv' | head -n 1)
-          if [ -z "$FILE" ]; then
-            echo "No submission found in merge commit"
-            exit 1
+          BASE="${{ github.event.pull_request.base.sha }}"
+          MERGE="${{ github.event.pull_request.merge_commit_sha }}"
+
+          # Fallback: merge_commit_sha can be empty in some cases
+          if [ -z "$MERGE" ]; then
+            MERGE="${{ github.sha }}"
           fi
+
+          echo "Base:  $BASE"
+          echo "Merge: $MERGE"
+
+          git diff --name-only "$BASE" "$MERGE" | tee changed_files.txt
+
+          FILE=$(cat changed_files.txt | grep -E '^submissions/inbox/.+/predictions\.csv$' | head -n 1)
+          if [ -z "$FILE" ]; then
+            echo "No predictions.csv found in this merged PR. Exiting cleanly."
+            echo "file=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Found submission: $FILE"
           echo "file=$FILE" >> $GITHUB_OUTPUT
 
+      - name: Validate submission (again on merge)
+        if: steps.find.outputs.file != ''
+        run: |
+          python -m competition.validate_submission --submission "${{ steps.find.outputs.file }}"
+
       - name: Score merged submission
+        if: steps.find.outputs.file != ''
         id: score
         run: |
           python -m competition.evaluate --submission "${{ steps.find.outputs.file }}" | tee score.txt
-          SCORE=$(tail -n 1 score.txt | awk '{print $2}')
+          SCORE=$(grep -E '^macro_f1:' score.txt | tail -n 1 | awk '{print $2}')
+          if [ -z "$SCORE" ]; then
+            echo "Could not parse macro_f1 from output"
+            exit 1
+          fi
           echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "Parsed score: $SCORE"
 
-      - name: Update leaderboard CSV
+      - name: Update leaderboard CSV (append + keep header once)
+        if: steps.find.outputs.file != ''
         run: |
           mkdir -p leaderboard
-          echo "pr,author,score" >> leaderboard/leaderboard.csv
-          echo "${{ github.event.pull_request.number }},${{ github.event.pull_request.user.login }},${{ steps.score.outputs.score }}" >> leaderboard/leaderboard.csv
+          CSV="leaderboard/leaderboard.csv"
 
-      - name: Commit leaderboard
+          if [ ! -f "$CSV" ]; then
+            echo "pr,author,score,utc_time" > "$CSV"
+          fi
+
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "${{ github.event.pull_request.number }},${{ github.event.pull_request.user.login }},${{ steps.score.outputs.score }},${DATE}" >> "$CSV"
+
+          echo "[OK] appended to $CSV"
+          tail -n 5 "$CSV" || true
+
+      - name: Render leaderboard artifacts
+        if: steps.find.outputs.file != ''
+        run: |
+          python -m competition.render_leaderboard
+
+      - name: Commit and push leaderboard updates
+        if: steps.find.outputs.file != ''
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add leaderboard/leaderboard.csv
-          git commit -m "Update leaderboard"
+
+          git add leaderboard/leaderboard.csv leaderboard/leaderboard.md docs/ || true
+
+          if git diff --cached --quiet; then
+            echo "No leaderboard changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update leaderboard (PR #${{ github.event.pull_request.number }})"
           git push
 
