@@ -63,7 +63,7 @@ jobs:
 
           git diff --name-only "$BASE" "$MERGE" | tee changed_files.txt
 
-          FILE=$(cat changed_files.txt | grep -E '^submissions/inbox/.+/predictions\.csv$' | head -n 1)
+          FILE=$(grep -E '^submissions/inbox/.+/predictions\.csv$' changed_files.txt | head -n 1)
           if [ -z "$FILE" ]; then
             echo "No predictions.csv found in this merged PR. Exiting cleanly."
             echo "file=" >> $GITHUB_OUTPUT
@@ -72,6 +72,16 @@ jobs:
 
           echo "Found submission: $FILE"
           echo "file=$FILE" >> $GITHUB_OUTPUT
+
+          # Parse team + run from path: submissions/inbox/<team>/<run>/predictions.csv
+          TEAM=$(echo "$FILE" | cut -d'/' -f3)
+          RUN=$(echo "$FILE"  | cut -d'/' -f4)
+
+          echo "team=$TEAM" >> $GITHUB_OUTPUT
+          echo "run=$RUN" >> $GITHUB_OUTPUT
+
+          echo "Parsed team: $TEAM"
+          echo "Parsed run:  $RUN"
 
       - name: Validate submission (again on merge)
         if: steps.find.outputs.file != ''
@@ -97,12 +107,19 @@ jobs:
           mkdir -p leaderboard
           CSV="leaderboard/leaderboard.csv"
 
+          # Correct header (5 columns)
           if [ ! -f "$CSV" ]; then
-            echo "pr,author,score,utc_time" > "$CSV"
+            echo "timestamp_utc,team,model,score,notes" > "$CSV"
           fi
 
-          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          echo "${{ github.event.pull_request.number }},${{ github.event.pull_request.user.login }},${{ steps.score.outputs.score }},${DATE}" >> "$CSV"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          TEAM="${{ steps.find.outputs.team }}"
+          MODEL="${{ steps.find.outputs.run }}"
+          SCORE="${{ steps.score.outputs.score }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          # Correct row order (5 columns)
+          echo "$TIMESTAMP,$TEAM,$MODEL,$SCORE,PR-$PR_NUMBER" >> "$CSV"
 
           echo "[OK] appended to $CSV"
           tail -n 5 "$CSV" || true
@@ -127,4 +144,3 @@ jobs:
 
           git commit -m "Update leaderboard (PR #${{ github.event.pull_request.number }})"
           git push
-
