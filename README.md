@@ -1,6 +1,4 @@
-Got it 👍 — here is the **raw README.md** ready to copy-paste directly.
 
-```md
 # TopoGraph Benchmark (TGB)
 
 NeurIPS Dataset & Benchmark Competition on Graph Learning with Topological Features
