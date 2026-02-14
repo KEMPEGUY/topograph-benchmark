@@ -142,50 +142,102 @@ The challenge is to design better fusion strategies between topology and GNN rep
 
 ## 3. Submission Format
 
-Participants submit one file:
+Secure Submission (Encrypted Predictions)
+
+To keep test labels private, raw predictions must never be uploaded.
+Participants submit an encrypted file that only the evaluation server can decrypt.
+
+Step 1 — Generate predictions
+
+Train your model and create a CSV file:
 
 predictions.csv
 
+
 Format:
 
-id,y_pred  
-0,2  
-1,0  
-2,5  
+id,y_pred
+0,2
+1,0
+2,5
 ...
 
+
 Rules:
-- id must match IDs in data/public/test_ids.npy
-- One row per test graph
-- y_pred must be an integer class label
-- No missing or duplicate IDs
 
-Template available in:
-data/public/sample_submission.csv
+One row per graph in data/public/test_ids.npy
 
----
+IDs must match exactly
 
-## 4. How to Submit
+No missing or duplicate rows
 
-1. Fork the repository  
-2. Create folder:
+Step 2 — Encrypt predictions
+
+Download the public key from the repository:
+
+encryption/public_key.pem
+
+
+Encrypt your CSV:
+
+python encryption/encrypt.py predictions.csv encryption/public_key.pem submissions/predictions.enc
+
+
+This creates:
+
+submissions/predictions.enc
+
+
+⚠️ The .enc file is unreadable without the private key.
+Do NOT upload the raw CSV.
+
+Step 3 — Create submission folder
+
+Create a submission directory:
 
 submissions/inbox/<team_name>/<run_id>/
 
-3. Add:
-- predictions.csv
-- metadata.json
+
+Example:
+
+submissions/inbox/topo_team/run1/
+
+
+Place inside:
+
+predictions.enc
+metadata.json
+
 
 Example metadata.json:
 
 {
-  "team": "example_team",
-  "model": "human+llm",
+  "team": "topo_team",
+  "model": "Hybrid topology + GNN",
   "llm_name": "gpt-5",
-  "notes": "Hybrid topology + GNN fusion model"
+  "notes": "Attention fusion model"
 }
 
-4. Open a Pull Request to main.
+Step 4 — Submit via Pull Request
+git add submissions/inbox/<team>/<run>/predictions.enc
+git add submissions/inbox/<team>/<run>/metadata.json
+git commit -m "Submission: <team> <run>"
+git push
+
+
+Open a Pull Request to main.
+
+Step 5 — Automatic scoring
+
+After the PR is opened:
+
+GitHub Actions decrypts the submission securely
+
+Predictions are evaluated against hidden test labels
+
+Macro-F1 score is posted in the PR
+
+Leaderboard updates after merge (2–5 minutes)4. Open a Pull Request to main.
 
 The PR will be automatically scored and the result posted as a comment.
 
