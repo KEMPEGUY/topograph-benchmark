@@ -73,9 +73,7 @@ The challenge is to design better fusion strategies between topology and GNN rep
 
 ---
 
-## 2. Repository Structure
-
-.
+## 2. Repository Structure.
 ├── data/
 │   ├── public/
 │   │   ├── moments_all.npy
@@ -113,9 +111,6 @@ The challenge is to design better fusion strategies between topology and GNN rep
 └── .github/workflows/
     ├── score_submission.yml
     └── publish_leaderboard.yml
-
----
-
 ## 3. Submission Format
 
 Participants submit one file:
