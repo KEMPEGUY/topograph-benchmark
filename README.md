@@ -5,7 +5,7 @@ NeurIPS Dataset & Benchmark Competition on Graph Learning with Topological Featu
 
 This repository provides a secure and reproducible template for running a graph learning competition where humans and LLMs compete on equal footing.
 
-The benchmark is designed to never execute participant code. Participants submit predictions only, which are automatically evaluated and ranked using GitHub Actions.
+The benchmark never executes participant code. Participants submit **predictions only**, which are automatically evaluated and ranked using GitHub Actions.
 
 This makes the competition:
 - Safe (no untrusted code execution)
@@ -18,43 +18,70 @@ This makes the competition:
 
 Participants must use the provided **topological moment features**.
 
-The core scientific goal of this benchmark is to study:
+Core scientific question:
 
 > How can topological representations be combined with Graph Neural Networks?
 
-Participants are encouraged to design models that **fuse topology and GNNs** in a principled way.
+Participants are encouraged to design models that **fuse topology and GNNs**.
 
-Possible approaches include (but are not limited to):
+Possible directions:
+- Fusion of moment features with GNN embeddings
+- Attention over topological descriptors
+- Multi-branch architectures (Topology + GNN)
+- Feature gating or conditioning of message passing by moments
+- Meta-learning or adaptive weighting
+- Ensemble or late fusion
 
-- Fusion of moment features with GNN embeddings  
-- Attention mechanisms over topological descriptors  
-- Multi-branch architectures (Topology branch + GNN branch)  
-- Feature gating or conditioning of message passing by moments  
-- Meta-learning or adaptive weighting between topology and GNN signals  
-- Ensemble or late-fusion strategies  
-
-Pure GNN-only or pure moment-only models are allowed as baselines,  
-but **the competition is designed so that better fusion is required to win.**
+Pure GNN-only and pure moment-only models are allowed as baselines, but **better fusion is required to win**.
 
 Only predictions are submitted.
 
-### Public Inputs (data/public/)
+---
 
-moments_all.npy  → Feature matrix (N graphs × d features)  
-train_ids.npy    → Training graph indices  
-val_ids.npy      → Validation graph indices  
-test_ids.npy     → Test graph indices  
-labels_train.npy → Training labels  
-labels_val.npy   → Validation labels (optional)
+## Public Inputs (`data/public/`)
+
+moments_all.npy   → Feature matrix (N graphs × d features)  
+train_ids.npy     → Training graph indices  
+val_ids.npy       → Validation graph indices  
+test_ids.npy      → Test graph indices  
+labels_train.npy  → Training labels  
+labels_val.npy    → Validation labels (optional)
 
 ### Required Output
-
-Predict labels for all graphs in test_ids.npy.
+Predict labels for all graphs in `test_ids.npy`.
 
 ### Evaluation Metric
+**Macro-F1**
 
-Primary metric: Macro-F1 score.
+---
 
+## 2. Dataset (Important)
+
+This benchmark uses the **ENZYMES graph classification dataset**.
+
+Graphs are obtained via PyTorch Geometric:
+
+```python
+from torch_geometric.datasets import TUDataset
+dataset = TUDataset(root="data", name="ENZYMES")
+
+
+Official Split
+
+Each index i corresponds simultaneously to:
+
+Graph → dataset[i]
+Moment vector → moments_all[i]
+Split → i ∈ train / val / test
+
+Participants must use this split and may not use external datasets.
+
+Hidden test labels are stored in:
+
+data/private/labels_all.npy
+
+
+and are used only for scoring.
 ---
 
 ## Baseline Results
@@ -74,8 +101,9 @@ The challenge is to design better fusion strategies between topology and GNN rep
 ---
 
 ## 2. Repository Structure.
+
 ├── data/
-│   ├── public/
+|   ├── public/
 │   │   ├── moments_all.npy
 │   │   ├── train_ids.npy
 │   │   ├── val_ids.npy
@@ -111,6 +139,7 @@ The challenge is to design better fusion strategies between topology and GNN rep
 └── .github/workflows/
     ├── score_submission.yml
     └── publish_leaderboard.yml
+
 ## 3. Submission Format
 
 Participants submit one file:
