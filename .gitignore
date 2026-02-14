@@ -24,3 +24,4 @@ data/private/
 data/private/*.npy
 labels_all_b64.txt
 .~lock.*#
+encryption/private_key.pem
