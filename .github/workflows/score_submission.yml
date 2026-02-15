@@ -3,7 +3,7 @@ name: Score Submission (PR)
 on:
   pull_request:
     paths:
-      - "submissions/**/*.enc"
+      - "submissions/inbox/**/predictions.enc"
 
 permissions:
   contents: read
@@ -28,6 +28,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pycryptodome
 
       - name: Reconstruct hidden labels
         env:
@@ -71,9 +72,9 @@ jobs:
 
           git diff --name-only "$BASE" "$HEAD" | tee changed_files.txt
 
-          FILE=$(cat changed_files.txt | grep -E '^submissions/.+\.enc$' | head -n 1)
+          FILE=$(cat changed_files.txt | grep -E '^submissions/inbox/.+/predictions\.enc$' | head -n 1)
           if [ -z "$FILE" ]; then
-            echo "No .enc file found in PR diff."
+            echo "No predictions.enc found in PR diff."
             exit 1
           fi
 
@@ -109,7 +110,7 @@ jobs:
         with:
           script: |
             const scoreLine = `${{ steps.score.outputs.score_line }}`;
-            const body = `**Submission scored**\n\n\`\`\`\n${scoreLine}\n\`\`\`\n\n(Leaderboard updates after merge.)`;
+            const body = `✅ **Submission scored**\n\n\`\`\`\n${scoreLine}\n\`\`\`\n\n(Leaderboard updates after merge.)`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
