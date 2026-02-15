@@ -3,7 +3,7 @@ name: Score Submission (PR)
 on:
   pull_request:
     paths:
-      - "submissions/inbox/**/predictions.csv"
+      - "submissions/inbox/**/predictions.enc"
 
 permissions:
   contents: read
@@ -28,6 +28,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pycryptodome
 
       - name: Reconstruct hidden labels
         env:
@@ -47,7 +48,20 @@ jobs:
           print("[OK] wrote data/private/labels_all.npy")
           EOF
 
-      - name: Find submission file in PR diff (base SHA -> head SHA)
+      - name: Reconstruct private key
+        env:
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+        run: |
+          if [ -z "$PRIVATE_KEY" ]; then
+            echo "Missing secret PRIVATE_KEY"
+            exit 1
+          fi
+          mkdir -p encryption
+          printf "%s" "$PRIVATE_KEY" > encryption/private_key.pem
+          chmod 600 encryption/private_key.pem
+          echo "[OK] wrote encryption/private_key.pem"
+
+      - name: Find encrypted submission in PR diff (base SHA -> head SHA)
         id: find
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
@@ -58,23 +72,32 @@ jobs:
 
           git diff --name-only "$BASE" "$HEAD" | tee changed_files.txt
 
-          FILE=$(cat changed_files.txt | grep -E '^submissions/inbox/.+/predictions\.csv$' | head -n 1)
+          FILE=$(cat changed_files.txt | grep -E '^submissions/inbox/.+/predictions\.enc$' | head -n 1)
           if [ -z "$FILE" ]; then
-            echo "No predictions.csv found in PR diff."
+            echo "No predictions.enc found in PR diff."
             exit 1
           fi
 
           echo "file=$FILE" >> $GITHUB_OUTPUT
-          echo "[INFO] submission file: $FILE"
+          echo "[INFO] encrypted submission file: $FILE"
 
-      - name: Validate submission
+      - name: Decrypt submission
         run: |
-          python -m competition.validate_submission --submission "${{ steps.find.outputs.file }}"
+          python competition/decrypt_submission.py \
+            "${{ steps.find.outputs.file }}" \
+            encryption/private_key.pem \
+            decrypted.csv
+          echo "[OK] decrypted -> decrypted.csv"
+          ls -l decrypted.csv
 
-      - name: Score submission
+      - name: Validate submission (decrypted)
+        run: |
+          python -m competition.validate_submission --submission "decrypted.csv"
+
+      - name: Score submission (decrypted)
         id: score
         run: |
-          python -m competition.evaluate --submission "${{ steps.find.outputs.file }}" | tee score.txt
+          python -m competition.evaluate --submission "decrypted.csv" | tee score.txt
           SCORE_LINE=$(grep -E '^macro_f1:' score.txt | tail -n 1)
           if [ -z "$SCORE_LINE" ]; then
             echo "Could not find macro_f1 line in output"
