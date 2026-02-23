@@ -1,0 +1,6 @@
+{
+  "team": "test_team",
+  "model": "encrypted_test",
+  "llm_name": "none",
+  "notes": "First end-to-end encrypted submission test"
+}
